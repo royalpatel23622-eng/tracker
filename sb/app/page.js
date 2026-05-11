@@ -1,8 +1,9 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
-import Dashboard     from '../components/Dashboard';
-import SchedulePage  from '../components/SchedulePage';
-import TrackerPage   from '../components/TrackerPage';
+import Dashboard            from '../components/Dashboard';
+import SchedulePage         from '../components/SchedulePage';
+import TrackerPage          from '../components/TrackerPage';
+import NotificationEngine   from '../components/NotificationEngine';
 import BadgesPage    from '../components/BadgesPage';
 import AnalysisPage  from '../components/AnalysisPage';
 import SettingsModal from '../components/SettingsModal';
@@ -111,6 +112,7 @@ export default function App() {
       </nav>
 
       {/* ── Settings ─────────────────────────────────────── */}
+      <NotificationEngine />
       {showSettings && <SettingsModal onClose={() => setShowSettings(false)} toast={toast} />}
 
       {/* ── Toasts ───────────────────────────────────────── */}
