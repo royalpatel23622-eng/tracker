@@ -105,16 +105,18 @@ function checkNow() {
       fireReminder(block);
     }
 
-    // ── Missed block alert (fires 1 min after block ends) ──
+    // ── Missed block alert: fires once after block ends, stops when ticked ──
+    // No time-window cap — you can tick anytime and alert stops immediately.
     const triggerMin = endM + 1;
-    if (
-      !firedToday.has(missedKey) &&
-      mins >= triggerMin &&
-      mins < triggerMin + 30 && // only alert within 30min window after end
-      !done.includes(block.id)
-    ) {
-      firedToday.add(missedKey);
-      fireMissed(block);
+    if (mins >= triggerMin && !done.includes(block.id)) {
+      // Block has ended and not ticked yet → alert (once per session)
+      if (!firedToday.has(missedKey)) {
+        firedToday.add(missedKey);
+        fireMissed(block);
+      }
+    } else if (done.includes(block.id)) {
+      // You ticked it (even late) → remove from fired so no more pings
+      firedToday.delete(missedKey);
     }
   });
 }
