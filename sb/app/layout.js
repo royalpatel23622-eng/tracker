@@ -1,8 +1,8 @@
 import './globals.css';
 
 export const metadata = {
-  title: 'StudyBuddy — Your Tracker',
-  description: 'Personalized study tracker with timetable, tick system, achievements & Telegram',
+  title: 'StudyBuddy — JEE Tracker',
+  description: 'Daily tracker with timetable, tick system, achievements & Telegram',
   manifest: '/manifest.json',
 };
 
