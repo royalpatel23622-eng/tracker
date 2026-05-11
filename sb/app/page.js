@@ -76,7 +76,7 @@ export default function App() {
           <span style={{ fontSize:28 }}>📖</span>
           <div>
             <div style={{ fontFamily:'Nunito', fontWeight:900, fontSize:18, color:'#FF7F7F', lineHeight:1 }}>StudyBuddy</div>
-            <div style={{ fontSize:11, color:'#9D9D9D' }}>JEE Prep Tracker</div>
+            <div style={{ fontSize:11, color:'#9D9D9D' }}>Study Tracker</div>
           </div>
         </div>
         <button onClick={() => setShowSettings(true)} style={{

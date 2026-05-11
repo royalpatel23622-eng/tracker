@@ -1,136 +1,134 @@
 'use client';
 // ── NotificationEngine ────────────────────────────────────────
-// Runs in background, fires browser + Telegram alerts when
-// a block's end time passes and it hasn't been ticked yet.
-// Also sends "starting soon" reminders 5 min before each block.
+// Schedules ALL of today's notifications via the Service Worker
+// so they fire even when the app tab is closed/minimised.
+// Re-schedules whenever a block is ticked (cancels its alert).
 // ─────────────────────────────────────────────────────────────
 
-import { useEffect, useRef } from 'react';
-import { getTimetable, getDayDone, getSettings, sendTelegram, getMissedLine } from '../lib/store';
+import { useEffect } from 'react';
+import { getTimetable, getDayDone, getSettings, getMissedLine, sendTelegram } from '../lib/store';
+import { to12h } from '../lib/store';
 
-function toMin(t) {
-  // handles times past midnight like "00:15" as next-day
+// ── Helpers ───────────────────────────────────────────────────
+function to24Min(t) {
   if (!t) return 0;
   const [h, m] = t.split(':').map(Number);
   return h * 60 + m;
 }
 
-function nowMin() {
-  const n = new Date();
-  return n.getHours() * 60 + n.getMinutes();
-}
+function todayAt(hhmm) {
+  // Returns a Date for today at hhmm "HH:MM"
+  // If hhmm is like "00:15" and current time is past noon, treat as next day
+  const [h, m] = hhmm.split(':').map(Number);
+  const now = new Date();
+  const d = new Date(now);
+  d.setHours(h, m, 0, 0);
 
-// Send a browser push notification
-function pushNotif(title, body, tag) {
-  if (typeof window === 'undefined') return;
-  if (Notification.permission !== 'granted') return;
-  try {
-    new Notification(title, {
-      body,
-      icon: '/icon.png',
-      tag: tag || 'studybuddy',
-      requireInteraction: false,
-    });
-  } catch {}
-}
-
-// Send Telegram + browser notification for a missed block
-async function fireMissed(block) {
-  const line = getMissedLine(block.type);
-  const title = `⚠️ Missed: ${block.label}`;
-
-  // Browser notif
-  pushNotif(title, line, `missed_${block.id}`);
-
-  // Telegram
-  const cfg = getSettings();
-  if (cfg.telegramBotToken && cfg.telegramChatId) {
-    try {
-      await sendTelegram(
-        cfg.telegramBotToken,
-        cfg.telegramChatId,
-        `⚠️ *Missed Block Alert!*\n\n*${block.label}* just ended without being ticked.\n\n_${line}_\n\nOpen StudyBuddy and get back on track! 🔥`,
-      );
-    } catch {}
+  // If the resulting time is more than 6 hours in the past, it's the next calendar day
+  // (handles overnight blocks like 00:30 which belong to the next day slot)
+  if (d.getTime() < now.getTime() - 6 * 3600 * 1000) {
+    d.setDate(d.getDate() + 1);
   }
+  return d;
 }
 
-// Send "starting soon" reminder
-function fireReminder(block) {
-  pushNotif(
-    `⏰ Starting in 5 min: ${block.label}`,
-    `Get ready! ${block.start} – ${block.end}`,
-    `remind_${block.id}`,
-  );
+async function getSW() {
+  if (typeof navigator === 'undefined') return null;
+  if (!('serviceWorker' in navigator)) return null;
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    return reg.active;
+  } catch { return null; }
 }
 
-// Track which alerts have already fired today so we don't repeat
-const firedToday = new Set();
+// ── Build today's notification schedule ───────────────────────
+function buildSchedule(timetable, done, cfg) {
+  const dayIdx = new Date().getDay();
+  const notifications = [];
 
-function checkNow() {
-  if (typeof window === 'undefined') return;
-  const cfg = getSettings();
-  if (!cfg.notificationsEnabled && !cfg.telegramBotToken) return;
-
-  const now   = new Date();
-  const mins  = nowMin();
-  const today = now.toDateString();
-  const dayIdx = now.getDay();
-  const done  = getDayDone(today);
-  const tt    = getTimetable();
-
-  tt.forEach(block => {
+  timetable.forEach(block => {
     if (!block.notify) return;
     if (!block.days.includes(dayIdx)) return;
 
-    let startM = toMin(block.start);
-    let endM   = toMin(block.end);
+    const line = getMissedLine(block.type);
 
-    // Handle overnight blocks (e.g. 21:15–00:15): end < start means past midnight
-    // We treat them simply: if current time is past end, check missed
-    // For simplicity: if endM < startM, the block crosses midnight
-    // Only fire "missed" if we're past the end time (and end > 0 meaning it has an end)
-
-    const missedKey  = `missed_${block.id}_${today}`;
-    const reminderKey = `remind_${block.id}_${today}`;
-
-    // ── "Starting soon" reminder (5 min before) ────────────
-    if (
-      !firedToday.has(reminderKey) &&
-      cfg.notificationsEnabled &&
-      mins >= startM - 5 &&
-      mins < startM
-    ) {
-      firedToday.add(reminderKey);
-      fireReminder(block);
+    // 1. "Starting in 5 min" reminder
+    const remindAt = todayAt(block.start).getTime() - 5 * 60 * 1000;
+    if (remindAt > Date.now()) {
+      notifications.push({
+        fireAt: remindAt,
+        title:  `⏰ Starting soon: ${block.label}`,
+        body:   `5 min to go! ${to12h(block.start)} – ${to12h(block.end)}`,
+        tag:    `remind_${block.id}`,
+      });
     }
 
-    // ── Missed block alert: fires once after block ends, stops when ticked ──
-    // No time-window cap — you can tick anytime and alert stops immediately.
-    const triggerMin = endM + 1;
-    if (mins >= triggerMin && !done.includes(block.id)) {
-      // Block has ended and not ticked yet → alert (once per session)
-      if (!firedToday.has(missedKey)) {
-        firedToday.add(missedKey);
-        fireMissed(block);
+    // 2. Missed-block alert (1 min after end), only if not already ticked
+    if (!done.includes(block.id)) {
+      const missedAt = todayAt(block.end).getTime() + 60 * 1000;
+      if (missedAt > Date.now()) {
+        notifications.push({
+          fireAt: missedAt,
+          title:  `⚠️ Missed: ${block.label}`,
+          body:   line,
+          tag:    `missed_${block.id}`,
+        });
       }
-    } else if (done.includes(block.id)) {
-      // You ticked it (even late) → remove from fired so no more pings
-      firedToday.delete(missedKey);
     }
   });
+
+  return notifications;
 }
 
-// ── React hook — drop into any page layout ────────────────────
-export default function NotificationEngine() {
-  const ivRef = useRef(null);
+// ── Send schedule to service worker ───────────────────────────
+async function scheduleAll() {
+  const sw = await getSW();
+  if (!sw) return;
 
+  const cfg  = getSettings();
+  if (!cfg.notificationsEnabled) return;
+
+  const today = new Date().toDateString();
+  const done  = getDayDone(today);
+  const tt    = getTimetable();
+  const notifs = buildSchedule(tt, done, cfg);
+
+  sw.postMessage({ type: 'SCHEDULE_NOTIFICATIONS', notifications: notifs });
+}
+
+// ── Cancel a specific alert (called when block is ticked) ─────
+export async function cancelMissedAlert(blockId) {
+  const sw = await getSW();
+  if (!sw) return;
+  sw.postMessage({ type: 'CANCEL_NOTIFICATION', tag: `missed_${blockId}` });
+}
+
+// ── Telegram missed-block DM ──────────────────────────────────
+export async function sendMissedTelegram(block) {
+  const cfg = getSettings();
+  if (!cfg.telegramBotToken || !cfg.telegramChatId) return;
+  const line = getMissedLine(block.type);
+  try {
+    await sendTelegram(
+      cfg.telegramBotToken,
+      cfg.telegramChatId,
+      `⚠️ *Missed Block!*\n\n*${block.label}* ended without being ticked.\n\n_${line}_\n\nOpen the app and get back on track! 🔥`,
+    );
+  } catch {}
+}
+
+// ── React hook ────────────────────────────────────────────────
+export default function NotificationEngine() {
   useEffect(() => {
-    // Check immediately, then every 60 seconds
-    checkNow();
-    ivRef.current = setInterval(checkNow, 60 * 1000);
-    return () => clearInterval(ivRef.current);
+    // Schedule on mount
+    scheduleAll();
+
+    // Reschedule every hour (in case day rolls over or new ticks happen)
+    const iv = setInterval(scheduleAll, 60 * 60 * 1000);
+    return () => clearInterval(iv);
   }, []);
 
-  return null; // renders nothing
+  return null;
 }
+
+export { scheduleAll };

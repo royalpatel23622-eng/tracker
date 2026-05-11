@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { getTimetable, saveTimetable, getDayDone, toggleDone } from '../lib/store';
+import { cancelMissedAlert, scheduleAll } from './NotificationEngine';
+import { getTimetable, saveTimetable, getDayDone, toggleDone, to12h } from '../lib/store';
 
 const DN  = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 const TM  = {
@@ -31,6 +32,8 @@ export default function SchedulePage({ toast }) {
 
   const handleTick = (block) => {
     const list = toggleDone(block.id, TODAY);
+    cancelMissedAlert(block.id);
+    scheduleAll();
     setDone(list);
     toast(list.includes(block.id) ? `✅ ${block.label} done!` : '↩️ Unmarked', list.includes(block.id)?'success':'info');
   };
@@ -117,7 +120,7 @@ export default function SchedulePage({ toast }) {
                       overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',
                     }}>{block.label}</div>
                     <div style={{fontSize:11,color:'#9D9D9D',display:'flex',gap:8,flexWrap:'wrap',marginTop:2}}>
-                      <span>{block.start}–{block.end}</span>
+                      <span>{to12h(block.start)}–{to12h(block.end)}</span>
                       <span>{dur(block.start,block.end)}</span>
                       {block.subject&&<span>📘 {block.subject}</span>}
                     </div>

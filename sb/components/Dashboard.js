@@ -1,8 +1,9 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
+import { cancelMissedAlert, scheduleAll } from './NotificationEngine';
 import {
   getStats, saveStats, getTimetable, getSettings,
-  getLevel, getDayDone, toggleDone, checkAchievements,
+  getLevel, getDayDone, toggleDone, checkAchievements,, to12h
 } from '../lib/store';
 
 function toMin(t) { if(t==='24:00')return 1440; const[h,m]=t.split(':').map(Number); return h*60+m; }
@@ -37,6 +38,8 @@ export default function Dashboard({ toast, checkAndNotify }) {
 
   const handleTick = useCallback((block) => {
     const newDone = toggleDone(block.id, TODAY);
+    cancelMissedAlert(block.id);
+    scheduleAll(); // reschedule remaining alerts
     setDone(newDone);
     const justTicked = newDone.includes(block.id);
     if (!justTicked) { toast('↩️ Marked incomplete', 'info'); return; }
@@ -152,7 +155,7 @@ export default function Dashboard({ toast, checkAndNotify }) {
             <div>
               <div style={{ fontSize:10, color:'#FF7F7F', fontFamily:'Nunito', fontWeight:700, letterSpacing:1, marginBottom:2 }}>▶ RIGHT NOW</div>
               <div style={{ fontFamily:'Nunito', fontWeight:800, fontSize:17 }}>{currentBlock.label}</div>
-              <div style={{ fontSize:12, color:'#9D9D9D' }}>{currentBlock.start} – {currentBlock.end}</div>
+              <div style={{ fontSize:12, color:'#9D9D9D' }}>{to12h(currentBlock.start)} – {to12h(currentBlock.end)}</div>
             </div>
             {currentBlock.type !== 'sleep' && (
               <button onClick={() => handleTick(currentBlock)} style={{
@@ -206,7 +209,7 @@ export default function Dashboard({ toast, checkAndNotify }) {
                   overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap',
                 }}>{block.label}</div>
                 <div style={{ fontSize:11, color:'#9D9D9D' }}>
-                  {block.start}–{block.end}
+                  {to12h(block.start)}–{to12h(block.end)}
                   {isCurrent && <span style={{ color:'#FF7F7F', fontWeight:700, marginLeft:6 }}>● Live</span>}
                   {isPast && !isDone && <span style={{ color:'#FFB07F', fontWeight:700, marginLeft:6 }}>⚠ Missed</span>}
                 </div>

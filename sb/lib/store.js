@@ -200,3 +200,13 @@ export async function sendTelegram(token, chatId, text) {
   if (!d.ok) throw new Error(d.description);
   return d;
 }
+
+
+// Convert "HH:MM" 24h to "h:MM AM/PM"
+export function to12h(t) {
+  if (!t) return '';
+  const [h, m] = t.split(':').map(Number);
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  const h12  = h % 12 || 12;
+  return `${h12}:${String(m).padStart(2,'0')} ${ampm}`;
+}
